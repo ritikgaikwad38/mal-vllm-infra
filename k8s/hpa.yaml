@@ -1,0 +1,64 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vllm-hpa
+  namespace: vllm
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vllm-inference
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    # CPU based scaling for CPU mode
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Memory based scaling
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+
+---
+# NOTE: For GPU production, replace HPA above with KEDA
+# KEDA scales based on vLLM request queue depth
+# which is more accurate than CPU for LLM workloads
+#
+# apiVersion: keda.sh/v1alpha1
+# kind: ScaledObject
+# metadata:
+#   name: vllm-keda-scaler
+#   namespace: vllm
+# spec:
+#   scaleTargetRef:
+#     name: vllm-inference
+#   minReplicaCount: 1
+#   maxReplicaCount: 10
+#   triggers:
+#     - type: prometheus
+#       metadata:
+#         serverAddress: http://prometheus-server.monitoring.svc
+#         metricName: vllm_request_queue_depth
+#         threshold: "5"
+#         query: vllm_num_requests_waiting
