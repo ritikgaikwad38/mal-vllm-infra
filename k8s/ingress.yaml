@@ -1,0 +1,45 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vllm-ingress
+  namespace: vllm
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    # TLS termination at ALB with ACM cert
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # WAF integration for banking security
+    alb.ingress.kubernetes.io/wafv2-acl-arn: YOUR_WAF_ARN
+    # Access logs to S3 for CBUAE audit
+    alb.ingress.kubernetes.io/load-balancer-attributes: >
+      access_logs.s3.enabled=true,
+      access_logs.s3.bucket=mal-vllm-audit-logs,
+      access_logs.s3.prefix=alb-access-logs,
+      idle_timeout.timeout_seconds=300
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 80
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 80
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: vllm-service
+                port:
+                  number: 80

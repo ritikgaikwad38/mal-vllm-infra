@@ -1,0 +1,126 @@
+# Prometheus Helm values for vLLM monitoring
+prometheus:
+  prometheusSpec:
+    # Data retention - 30 days
+    retention: 30d
+    retentionSize: "10GB"
+
+    # Scrape interval
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+
+    # Resource limits
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+
+    # Additional scrape configs for vLLM
+    additionalScrapeConfigs:
+      - job_name: "vllm-inference"
+        static_configs:
+          - targets: ["vllm-service.vllm.svc.cluster.local:80"]
+        metrics_path: /metrics
+        scrape_interval: 10s
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+          - target_label: service
+            replacement: vllm-inference
+
+      - job_name: "kubernetes-pods"
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+
+    # Alerting rules for vLLM
+    additionalRulesForClusterRole:
+      - apiGroups: [""]
+        resources:
+          - nodes
+          - pods
+          - services
+          - endpoints
+        verbs: ["get", "list", "watch"]
+
+  # Alert rules
+  additionalPrometheusRulesMap:
+    vllm-alerts:
+      groups:
+        - name: vllm.rules
+          rules:
+            # High latency alert
+            - alert: VLLMHighTTFT
+              expr: vllm_time_to_first_token_seconds_p99 > 2.0
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "vLLM TTFT is too high"
+                description: "P99 TTFT is {{ $value }}s, threshold is 2s"
+
+            # Queue depth alert
+            - alert: VLLMHighQueueDepth
+              expr: vllm_num_requests_waiting > 10
+              for: 2m
+              labels:
+                severity: critical
+              annotations:
+                summary: "vLLM request queue is backing up"
+                description: "{{ $value }} requests waiting in queue"
+
+            # OOM risk alert
+            - alert: VLLMHighMemoryUsage
+              expr: vllm_gpu_cache_usage_perc > 90
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "vLLM GPU/CPU memory critically high"
+                description: "Memory usage at {{ $value }}%"
+
+            # Pod down alert
+            - alert: VLLMPodDown
+              expr: up{job="vllm-inference"} == 0
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: "vLLM pod is down"
+                description: "vLLM inference pod has been down for 1 minute"
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+
+# Node exporter for host metrics
+nodeExporter:
+  enabled: true
+
+# Kube state metrics
+kubeStateMetrics:
+  enabled: true
+
+grafana:
+  enabled: false  # We deploy Grafana separately

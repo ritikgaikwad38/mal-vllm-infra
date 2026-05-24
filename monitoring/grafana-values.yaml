@@ -1,0 +1,75 @@
+# Grafana Helm values
+replicas: 1
+
+# Admin credentials from Kubernetes secret
+admin:
+  existingSecret: grafana-admin-secret
+  userKey: admin-user
+  passwordKey: admin-password
+
+# Persistence
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Resources
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "200m"
+
+# Data sources
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-server.monitoring.svc.cluster.local
+        access: proxy
+        isDefault: true
+        jsonData:
+          timeInterval: "15s"
+
+# Dashboard providers
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: vllm-dashboards
+        orgId: 1
+        folder: "vLLM"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/vllm
+
+# Load dashboard from configmap
+dashboardsConfigMaps:
+  vllm: "vllm-grafana-dashboard"
+
+# Grafana service - internal only
+service:
+  type: ClusterIP
+  port: 3000
+
+# Ingress for Grafana
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+  hosts:
+    - grafana.mal-internal.com
+  path: /
+
+# Grafana plugins
+plugins:
+  - grafana-piechart-panel
+  - grafana-clock-panel
